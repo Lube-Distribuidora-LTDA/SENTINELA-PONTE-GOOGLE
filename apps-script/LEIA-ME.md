@@ -45,5 +45,22 @@ O TI já deixou a ponte no ar (`sentinela-ponte-google.vercel.app`) e o sistema 
    Compartilhar, tire "Qualquer pessoa com o link" e quem não precisa editar direto nela.
 10. **Avise o TI.** O Claude confere de fora que o link direto está fechado e que pelo painel abre e grava.
 
+## Depois de fechado: como continuar mexendo no sistema
+Você continua sendo o dono: mexe no código e na planilha como hoje. A cada mudança:
+1. **Não tire a porta.** O arquivo `PortaLube` e o nome `doGetOriginal_` ficam como estão. Sem eles o link volta a abrir
+   para qualquer um.
+2. **Função nova que o navegador chama:**
+   - nome terminando em `_`;
+   - entrada na lista `portaLube_funcoes_`;
+   - chamada por `api(PORTA_LUBE_TOKEN, 'nome', [...])`.
+
+   Se esquecer a lista, o botão dá "Função não liberada" (falha, mas fechado). Se criar sem o `_` no fim, a função fica
+   aberta para quem tiver o link: é o cuidado principal.
+3. **Publique sempre na implantação atual:** Gerenciar implantações › lápis › Nova versão. Uma implantação nova gera
+   outro link, fora do painel.
+4. **Para testar:** o link de teste do Google (`/dev`) também mostra "abre só pelo Painel Lube", porque não recebe o passe.
+   Peça ao TI o cartão OPERAÇÃO LOGÍSTICA no painel, publique a nova versão e confira por lá. Para desfazer, volte à
+   versão anterior (abaixo).
+
 ## Se der errado
 Implantar › Gerenciar implantações › lápis › Versão: escolha a versão anterior › Implantar. Volta como era, no mesmo link.
