@@ -1,0 +1,5 @@
+node_modules/
+.vercel/
+.env*
+ENV*
+apps-script/codigo-do-dono/

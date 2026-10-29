@@ -1,0 +1,12 @@
+{
+  "name": "sentinela-ponte-google",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ponte da Sentinela para sistemas do Google Apps Script (OPERAÇÃO LOGÍSTICA) - Lube Distribuidora",
+  "scripts": {
+    "test": "node --test testes/ponte.test.js"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
