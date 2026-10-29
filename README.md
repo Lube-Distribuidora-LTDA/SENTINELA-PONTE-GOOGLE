@@ -29,6 +29,12 @@ site, e o Google não roda esse guarda. Por isso há duas peças:
 - **A chave geral da Sentinela (`SENTINELA_CHAVE`) não entra aqui nem no script** (decisão do Júlio, 2026-10-29). A
   ponte fala com a central pelo OIDC, como os guardas da Vercel.
 
+## Onde está
+- GitHub: `Lube-Distribuidora-LTDA/SENTINELA-PONTE-GOOGLE` (público, sem chave nenhuma).
+- Vercel: projeto `sentinela-ponte-google` (`prj_n6c5YBy4vNxkTqCM49AqrHzrfQxh`), diretório raiz `ponte`, Node 22, OIDC do
+  time. Proteção da Vercel só nas prévias, como os outros sistemas.
+- Saúde, sem segredo: `GET /api/saude` → `{chave_cadastrada, central}`. O `central` deve dizer `aceitou`.
+
 ## Na Sentinela (projeto do Painel)
 `sentinela.sistemas`:
 - `projeto = 'sentinela-ponte-google'`;
