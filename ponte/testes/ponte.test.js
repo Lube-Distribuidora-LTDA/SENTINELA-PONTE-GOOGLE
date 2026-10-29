@@ -164,6 +164,29 @@ test("o hex do Apps Script (bytes com sinal) bate com o da ponte", () => {
   assert.equal(hexComoNoScript(comSinal), P.hmacHex(CHAVE, texto));
 });
 
+test("saúde: diz se há chave e se a central aceitou, sem vazar nada, e guarda 60 s", async () => {
+  P._esquecerSaude();
+  const vistos = [];
+  const r = await P.saude({ chave: CHAVE, oidc: OIDC, fetchFn: central(200, { segredo: "lista" }, vistos), agoraMs: 1000 });
+  assert.deepEqual(r, { ok: true, versao: P.VERSAO, chave_cadastrada: true, central: "aceitou" });
+  assert.equal(vistos[0].url, P.CENTRAL + "/lista");
+  assert.equal(vistos[0].init.headers.authorization, "Bearer " + OIDC);
+  assert.ok(!JSON.stringify(r).includes("segredo"));
+  // dentro de 60 s não chama a central de novo
+  const r2 = await P.saude({ chave: undefined, oidc: OIDC, fetchFn: central(401, {}, vistos), agoraMs: 50000 });
+  assert.equal(r2.central, "aceitou");
+  assert.equal(r2.chave_cadastrada, false);
+  assert.equal(vistos.length, 1);
+  // depois de 60 s, pergunta de novo
+  const r3 = await P.saude({ chave: CHAVE, oidc: OIDC, fetchFn: central(401, {}, vistos), agoraMs: 62000 });
+  assert.equal(r3.central, "recusou");
+  P._esquecerSaude();
+  assert.equal((await P.saude({ chave: CHAVE, oidc: null, fetchFn: central(200, {}), agoraMs: 0 })).central, "sem_oidc");
+  P._esquecerSaude();
+  assert.equal((await P.saude({ chave: CHAVE, oidc: OIDC, fetchFn: async () => { throw new Error("x"); }, agoraMs: 0 })).central, "fora");
+  P._esquecerSaude();
+});
+
 test("handler: só POST, lê o corpo cru e responde JSON sem cache", async () => {
   const handler = require("../api/trocar");
   function res() {

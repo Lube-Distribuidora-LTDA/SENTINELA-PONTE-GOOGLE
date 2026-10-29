@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["gru1"],
   "functions": {
-    "api/trocar.js": { "maxDuration": 15 }
+    "api/trocar.js": { "maxDuration": 15 },
+    "api/saude.js": { "maxDuration": 10 }
   },
   "headers": [
     {

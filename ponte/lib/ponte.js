@@ -136,4 +136,38 @@ async function trocar({ chave, assinatura, corpo, oidc, fetchFn, agoraS, prazoMs
   };
 }
 
-module.exports = { trocar, assinaturaValida, lerAssinatura, lerPasse, payloadJwt, tokenOidc, hmacHex, CENTRAL, SISTEMA, VERSAO, JANELA_S, OIDC_ISS };
+/**
+ * Saúde da ponte, sem segredo: a PONTE_CHAVE está cadastrada? a central aceita esta ponte
+ * (GET /lista com o OIDC)? Não devolve nada da lista. A resposta da central fica 60 s guardada
+ * na instância, para ninguém usar esta rota para martelar a central.
+ */
+let saudeGuardada = null;
+async function saude({ chave, oidc, fetchFn, agoraMs, prazoMs = 4000 }) {
+  const chaveOk = typeof chave === "string" && chave.length >= CHAVE_MIN;
+  if (saudeGuardada && agoraMs - saudeGuardada.em < 60000) {
+    return { ok: true, versao: VERSAO, chave_cadastrada: chaveOk, central: saudeGuardada.central };
+  }
+  let central = "sem_oidc";
+  if (oidc) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), prazoMs);
+    try {
+      const r = await fetchFn(CENTRAL + "/lista", {
+        method: "GET",
+        headers: { authorization: "Bearer " + oidc, "x-sentinela-guarda": VERSAO, "x-sentinela-runtime": "node" },
+        signal: ctrl.signal,
+      });
+      await r.text().catch(() => "");
+      central = r.ok ? "aceitou" : r.status === 401 || r.status === 403 ? "recusou" : "fora";
+    } catch {
+      central = "fora";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  saudeGuardada = { em: agoraMs, central };
+  return { ok: true, versao: VERSAO, chave_cadastrada: chaveOk, central };
+}
+function _esquecerSaude() { saudeGuardada = null; }
+
+module.exports = { trocar, saude, _esquecerSaude, assinaturaValida, lerAssinatura, lerPasse, payloadJwt, tokenOidc, hmacHex, CENTRAL, SISTEMA, VERSAO, JANELA_S, OIDC_ISS };
