@@ -47,5 +47,14 @@ module.exports = async function handler(req, res) {
     fetchFn: fetch,
     agoraS,
   });
+  // uma linha por troca, para o log da Vercel: só o resultado, nunca o passe, a assinatura ou a chave
+  console.log(JSON.stringify({
+    ponte: "trocar",
+    status: r.status,
+    ok: r.corpo.ok === true,
+    erro: r.corpo.erro || null,
+    status_central: r.corpo.status_central || null,
+    ua: String(req.headers["user-agent"] || "").slice(0, 60),
+  }));
   responder(res, r.status, r.corpo);
 };
