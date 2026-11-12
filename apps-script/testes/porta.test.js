@@ -16,9 +16,10 @@ const GS = fs.readFileSync(path.join(__dirname, "..", "PortaLube.gs"), "utf8");
 
 function b64(o) { return Buffer.from(JSON.stringify(o)).toString("base64url"); }
 function jwt(p) { return b64({ alg: "ES256" }) + "." + b64(p) + ".sig"; }
-const OIDC = jwt({ iss: ponte.OIDC_ISS, exp: Math.floor(Date.now() / 1000) + 600 });
+const oidcDe = (project) => jwt({ iss: ponte.OIDC_ISS, exp: Math.floor(Date.now() / 1000) + 600, project });
+const OIDC = oidcDe("sentinela-ponte-google");
 
-function montar({ chave = CHAVE, centralStatus = 200, sis = "operacao-logistica", usados } = {}) {
+function montar({ chave = CHAVE, centralStatus = 200, sis = "operacao-logistica", usados, oidc = OIDC } = {}) {
   const cache = new Map();
   const chamadas = { ponte: 0, salvar: [] };
   const jaUsados = usados || new Set();
@@ -88,7 +89,7 @@ function montar({ chave = CHAVE, centralStatus = 200, sis = "operacao-logistica"
         chave: process.env.TESTE_CHAVE_PONTE || CHAVE,
         assinatura: pendente.headers["x-ponte-assinatura"],
         corpo: pendente.payload,
-        oidc: OIDC,
+        oidc,
         fetchFn: central,
         agoraS: Math.floor(Date.now() / 1000),
       });
@@ -149,6 +150,13 @@ test("passe ruim, central fora, sessão de outro sistema ou chave errada: negado
   } finally {
     delete process.env.TESTE_CHAVE_PONTE;
   }
+});
+
+test("ponte de outro sistema (passe bom de outro cartão): negado", async () => {
+  // a ponte do Matriz troca um passe bom do Matriz, mas a porta é da Operação Logística
+  const g = montar({ oidc: oidcDe("sentinela-ponte-compras-matriz"), sis: "compras-matriz" });
+  assert.match((await g.doGet({ sentinela_passe: "bom.passe.m" })).html, /^NEGADO/);
+  assert.equal(g.chamadas.ponte, 2, "chamou a ponte e recusou pela resposta");
 });
 
 test("sem PONTE_CHAVE nas propriedades: negado (e não quebra)", async () => {

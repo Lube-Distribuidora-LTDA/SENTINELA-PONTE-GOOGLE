@@ -1,11 +1,15 @@
 /**
  * PONTE DA SENTINELA PARA O GOOGLE — a lógica, sem rede (os testes rodam no Node puro).
  *
- * O sistema OPERAÇÃO LOGÍSTICA é um app do Google Apps Script. O Google não roda o guarda da
- * Sentinela, e o script não consegue conferir sozinho o passe do painel (ES256). Então o script
- * manda o passe para esta ponte, assinado com uma chave que só serve para este sistema
- * (PONTE_CHAVE). A ponte se identifica na central da Sentinela pelo OIDC da Vercel, como
- * qualquer guarda, troca o passe pela sessão e devolve ao script só quem entrou.
+ * Os sistemas do Google Apps Script (OPERAÇÃO LOGÍSTICA, PAINEL COMPRAS MATRIZ, PAINEL COMPRAS RJ)
+ * não rodam o guarda da Sentinela, e o script não consegue conferir sozinho o passe do painel
+ * (ES256). Então o script manda o passe para a ponte dele, assinado com uma chave que só serve para
+ * aquele sistema (PONTE_CHAVE). A ponte se identifica na central da Sentinela pelo OIDC da Vercel,
+ * como qualquer guarda, troca o passe pela sessão e devolve ao script só quem entrou.
+ *
+ * Uma ponte por sistema: o mesmo código roda em um projeto da Vercel para cada um, e cada projeto
+ * tem a sua PONTE_CHAVE. A central liga cada projeto a um sistema só (sentinela.sistemas), então
+ * o passe de um sistema não abre outro.
  *
  * A chave geral da Sentinela (SENTINELA_CHAVE) nunca passa por aqui nem pelo script.
  */
@@ -13,8 +17,14 @@
 const crypto = require("crypto");
 
 const CENTRAL = "https://wkkdcsqwlxjxorutrbnx.supabase.co/functions/v1/sentinela";
-const SISTEMA = "operacao-logistica";       // o único sistema que esta ponte atende (sis do passe)
-const VERSAO = "ponte-google/1.0.0";
+// Projeto da Vercel que roda a ponte → o sistema (slug do cartão no painel) que ele atende.
+// O projeto vem do token OIDC da própria função (claim `project`), que a central confere.
+const SISTEMAS = Object.freeze({
+  "sentinela-ponte-google": "operacao-logistica",
+  "sentinela-ponte-compras-matriz": "compras-matriz",
+  "sentinela-ponte-compras-rj": "compras-rj",
+});
+const VERSAO = "ponte-google/1.1.0";
 const JANELA_S = 300;                       // assinatura vale 5 min para cada lado
 const CHAVE_MIN = 32;
 const CORPO_MAX = 8192;
@@ -79,6 +89,13 @@ function tokenOidc(cabecalho, ambiente, agoraS) {
   return null;
 }
 
+/** O sistema que esta ponte atende, pelo projeto do token OIDC; null se o projeto não está na lista. */
+function sistemaDoOidc(oidc) {
+  const p = payloadJwt(oidc);
+  const projeto = p && typeof p.project === "string" ? p.project : "";
+  return Object.prototype.hasOwnProperty.call(SISTEMAS, projeto) ? SISTEMAS[projeto] : null;
+}
+
 /**
  * Troca o passe na central. Devolve { status, corpo } para responder ao script.
  * fetchFn e agoraS entram por fora para os testes.
@@ -92,6 +109,8 @@ async function trocar({ chave, assinatura, corpo, oidc, fetchFn, agoraS, prazoMs
   const passe = lerPasse(corpo);
   if (!passe) return { status: 400, corpo: { ok: false, erro: "corpo" } };
   if (!oidc) return { status: 502, corpo: { ok: false, erro: "sem_oidc" } };
+  const sistema = sistemaDoOidc(oidc);
+  if (!sistema) return { status: 502, corpo: { ok: false, erro: "sem_sistema" } };
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), prazoMs);
@@ -121,7 +140,7 @@ async function trocar({ chave, assinatura, corpo, oidc, fetchFn, agoraS, prazoMs
 
   const s = payloadJwt(j.sessao);
   const email = s && typeof s.email === "string" ? s.email.toLowerCase() : "";
-  if (!s || s.typ !== "sessao" || s.sis !== SISTEMA || !email || email !== String(j.email || "").toLowerCase()) {
+  if (!s || s.typ !== "sessao" || s.sis !== sistema || !email || email !== String(j.email || "").toLowerCase()) {
     return { status: 502, corpo: { ok: false, erro: "sessao_estranha" } };
   }
   return {
@@ -130,7 +149,7 @@ async function trocar({ chave, assinatura, corpo, oidc, fetchFn, agoraS, prazoMs
       ok: true,
       email,
       nome: typeof s.nome === "string" ? s.nome.slice(0, 120) : "",
-      sistema: SISTEMA,
+      sistema,
       exp: typeof s.exp === "number" ? new Date(s.exp * 1000).toISOString() : null,
     },
   };
@@ -144,8 +163,9 @@ async function trocar({ chave, assinatura, corpo, oidc, fetchFn, agoraS, prazoMs
 let saudeGuardada = null;
 async function saude({ chave, oidc, fetchFn, agoraMs, prazoMs = 4000 }) {
   const chaveOk = typeof chave === "string" && chave.length >= CHAVE_MIN;
+  const sistema = oidc ? sistemaDoOidc(oidc) : null;
   if (saudeGuardada && agoraMs - saudeGuardada.em < 60000) {
-    return { ok: true, versao: VERSAO, chave_cadastrada: chaveOk, central: saudeGuardada.central };
+    return { ok: true, versao: VERSAO, sistema, chave_cadastrada: chaveOk, central: saudeGuardada.central };
   }
   let central = "sem_oidc";
   if (oidc) {
@@ -166,8 +186,8 @@ async function saude({ chave, oidc, fetchFn, agoraMs, prazoMs = 4000 }) {
     }
   }
   saudeGuardada = { em: agoraMs, central };
-  return { ok: true, versao: VERSAO, chave_cadastrada: chaveOk, central };
+  return { ok: true, versao: VERSAO, sistema, chave_cadastrada: chaveOk, central };
 }
 function _esquecerSaude() { saudeGuardada = null; }
 
-module.exports = { trocar, saude, _esquecerSaude, assinaturaValida, lerAssinatura, lerPasse, payloadJwt, tokenOidc, hmacHex, CENTRAL, SISTEMA, VERSAO, JANELA_S, OIDC_ISS };
+module.exports = { trocar, saude, _esquecerSaude, assinaturaValida, lerAssinatura, lerPasse, payloadJwt, tokenOidc, sistemaDoOidc, hmacHex, CENTRAL, SISTEMAS, VERSAO, JANELA_S, OIDC_ISS };

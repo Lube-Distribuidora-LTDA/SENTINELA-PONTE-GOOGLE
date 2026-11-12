@@ -11,7 +11,8 @@ const AGORA = 1793300000;
 function b64(o) { return Buffer.from(JSON.stringify(o)).toString("base64url"); }
 function jwt(payload) { return b64({ alg: "ES256", typ: "JWT" }) + "." + b64(payload) + ".assinatura"; }
 const PASSE = jwt({ typ: "passe", sis: "operacao-logistica" });
-const OIDC = jwt({ iss: P.OIDC_ISS, exp: AGORA + 600, owner_id: "team" });
+const OIDC = jwt({ iss: P.OIDC_ISS, exp: AGORA + 600, owner_id: "team", project: "sentinela-ponte-google" });
+const oidcDe = (project) => jwt({ iss: P.OIDC_ISS, exp: AGORA + 600, owner_id: "team", project });
 
 function assinar(corpo, t = AGORA, chave = CHAVE) {
   return "t=" + t + ",v1=" + P.hmacHex(chave, t + "." + corpo);
@@ -137,6 +138,38 @@ test("sessão de outro sistema, de outro tipo ou com e-mail diferente não passa
   }
 });
 
+test("cada projeto da Vercel atende só o seu sistema", async () => {
+  assert.equal(P.sistemaDoOidc(OIDC), "operacao-logistica");
+  assert.equal(P.sistemaDoOidc(oidcDe("sentinela-ponte-compras-matriz")), "compras-matriz");
+  assert.equal(P.sistemaDoOidc(oidcDe("sentinela-ponte-compras-rj")), "compras-rj");
+  for (const p of [undefined, "", "outro-projeto", "constructor", "__proto__", "toString"]) {
+    assert.equal(P.sistemaDoOidc(oidcDe(p)), null, String(p));
+  }
+  assert.equal(P.sistemaDoOidc("nao-e-jwt"), null);
+
+  // a ponte do Matriz troca o passe do Matriz e devolve o sistema dele
+  const sessaoMatriz = { ...SESSAO_OK, sessao: jwt({ typ: "sessao", sis: "compras-matriz", email: "fulano@lube.com.br", nome: "Fulano", exp: AGORA + 60 }) };
+  const ok = await P.trocar(chamada({ oidc: oidcDe("sentinela-ponte-compras-matriz"), fetchFn: central(200, sessaoMatriz) }));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.corpo.sistema, "compras-matriz");
+
+  // a ponte do Matriz não aceita sessão da Operação Logística nem do RJ, e a da logística não aceita a do Matriz
+  for (const sis of ["operacao-logistica", "compras-rj"]) {
+    const j = { ...SESSAO_OK, sessao: jwt({ typ: "sessao", sis, email: "fulano@lube.com.br" }) };
+    const r = await P.trocar(chamada({ oidc: oidcDe("sentinela-ponte-compras-matriz"), fetchFn: central(200, j) }));
+    assert.equal(r.corpo.erro, "sessao_estranha", sis);
+  }
+  const r = await P.trocar(chamada({ fetchFn: central(200, sessaoMatriz) }));
+  assert.equal(r.corpo.erro, "sessao_estranha");
+
+  // projeto fora da lista: nem chama a central
+  const vistos = [];
+  const fora = await P.trocar(chamada({ oidc: oidcDe("outro-projeto"), fetchFn: central(200, SESSAO_OK, vistos) }));
+  assert.equal(fora.status, 502);
+  assert.equal(fora.corpo.erro, "sem_sistema");
+  assert.equal(vistos.length, 0);
+});
+
 test("central que demora além do prazo é abortada", async () => {
   const lenta = (url, init) => new Promise((ok, falha) => {
     init.signal.addEventListener("abort", () => falha(new Error("abortado")));
@@ -168,7 +201,7 @@ test("saúde: diz se há chave e se a central aceitou, sem vazar nada, e guarda 
   P._esquecerSaude();
   const vistos = [];
   const r = await P.saude({ chave: CHAVE, oidc: OIDC, fetchFn: central(200, { segredo: "lista" }, vistos), agoraMs: 1000 });
-  assert.deepEqual(r, { ok: true, versao: P.VERSAO, chave_cadastrada: true, central: "aceitou" });
+  assert.deepEqual(r, { ok: true, versao: P.VERSAO, sistema: "operacao-logistica", chave_cadastrada: true, central: "aceitou" });
   assert.equal(vistos[0].url, P.CENTRAL + "/lista");
   assert.equal(vistos[0].init.headers.authorization, "Bearer " + OIDC);
   assert.ok(!JSON.stringify(r).includes("segredo"));
@@ -176,6 +209,7 @@ test("saúde: diz se há chave e se a central aceitou, sem vazar nada, e guarda 
   const r2 = await P.saude({ chave: undefined, oidc: OIDC, fetchFn: central(401, {}, vistos), agoraMs: 50000 });
   assert.equal(r2.central, "aceitou");
   assert.equal(r2.chave_cadastrada, false);
+  assert.equal((await P.saude({ chave: CHAVE, oidc: oidcDe("sentinela-ponte-compras-rj"), fetchFn: central(200, {}), agoraMs: 51000 })).sistema, "compras-rj");
   assert.equal(vistos.length, 1);
   // depois de 60 s, pergunta de novo
   const r3 = await P.saude({ chave: CHAVE, oidc: OIDC, fetchFn: central(401, {}, vistos), agoraMs: 62000 });

@@ -12,11 +12,17 @@
  *    e o Google não deixa o navegador chamar função que termina com "_".
  *
  * Nunca escreva a PONTE_CHAVE aqui: ela fica só em Configurações do projeto › Propriedades do script.
+ *
+ * Cada sistema tem a sua ponte e a sua chave (versão 1.1). Troque só estas três linhas:
+ *   OPERAÇÃO LOGÍSTICA    ponte sentinela-ponte-google          slug operacao-logistica
+ *   PAINEL COMPRAS MATRIZ ponte sentinela-ponte-compras-matriz  slug compras-matriz
+ *   PAINEL COMPRAS RJ     ponte sentinela-ponte-compras-rj      slug compras-rj
  */
 var PORTA_LUBE = {
   ponte: 'https://sentinela-ponte-google.vercel.app/api/trocar',
   portal: 'https://painel-lube-distribuidora.vercel.app/',
   sistema: 'OPERAÇÃO LOGÍSTICA',
+  slug: 'operacao-logistica', // o cartão no painel: a ponte tem que devolver este mesmo sistema
   horas: 6 // tempo da entrada; 6 h é o máximo do CacheService
 };
 
@@ -84,6 +90,10 @@ function portaLube_entrar_(e) {
   }
   var j = JSON.parse(r.getContentText());
   if (!j || j.ok !== true || typeof j.email !== 'string' || !j.email) return null;
+  if (j.sistema !== PORTA_LUBE.slug) {
+    console.warn('PORTA LUBE: a ponte respondeu pelo sistema ' + j.sistema + ', e este é ' + PORTA_LUBE.slug);
+    return null;
+  }
 
   var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
   var entrada = { email: j.email, nome: j.nome || '', ate: Date.now() + PORTA_LUBE.horas * 3600 * 1000 };
